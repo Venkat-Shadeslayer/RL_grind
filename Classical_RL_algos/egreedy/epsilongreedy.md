@@ -8,3 +8,5 @@ Do dry run with say 3X5 exaple and explore these two lines in great depth:
 comments-> answer the things in the comments
 intrepretation of the graphs
 
+Read the original epsilon-greedy paper too and document it here if possible
+
