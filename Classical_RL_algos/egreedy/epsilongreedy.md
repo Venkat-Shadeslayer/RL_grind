@@ -1,5 +1,3 @@
-#sarvam krishnaarpanam
-
 **Ideas:**
 Do dry run with say 3X5 exaple and explore these two lines in great depth:
         avg_rewards[eps]/=n_runs
