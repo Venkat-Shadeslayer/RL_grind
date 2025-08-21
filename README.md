@@ -1,4 +1,4 @@
 # RL_grind
 
 This is my RL journey. Haffun :)
-hi
+hi. how are you?
