@@ -30,14 +30,15 @@ class PGN(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
 
-
 def calc_qvals(rewards: tt.List[float]) -> tt.List[float]:
     """
-    Calculates discounted rewards for an episode.
+    Calculates discounted rewards for an episode and applies a baseline.
+    The baseline is the mean of the discounted rewards for the episode.
+    Subtracting it helps to reduce variance.
     Args:
         rewards: A list of rewards obtained during one episode.
     Returns:
-        A list of discounted total rewards (Q-values).
+        A list of baseline-adjusted discounted total rewards (advantages).
     """
     res = []
     sum_r = 0.0
@@ -45,14 +46,21 @@ def calc_qvals(rewards: tt.List[float]) -> tt.List[float]:
         sum_r *= GAMMA
         sum_r += r
         res.append(sum_r)
-    # The result is now in reverse order, so we reverse it back
-    return list(reversed(res))
+    
+    # Reverse the list to match the order of states and actions
+    res = list(reversed(res))
+    
+    # Calculate the mean of the discounted rewards (the baseline)
+    mean_q = np.mean(res)
+    
+    # Subtract the baseline from each discounted reward
+    return [q - mean_q for q in res]
 
 
 if __name__ == "__main__":
     # --- Initialization ---
     env = gym.make("CartPole-v1")
-    writer = SummaryWriter(comment="-cartpole-reinforce")
+    writer = SummaryWriter(comment="-cartpole-reinforce-baseline-no-ptan")
 
     net = PGN(env.observation_space.shape[0], env.action_space.n)
     print(net)
@@ -70,28 +78,21 @@ if __name__ == "__main__":
     for episode_idx in count():
         # --- Episode Initialization ---
         state, _ = env.reset()
-        episode_rewards = []
+        episode_states, episode_actions, episode_rewards = [], [], []
         
         while True:
             # --- Action Selection ---
-            # Convert state to a tensor and add a batch dimension
             state_t = torch.as_tensor(state, dtype=torch.float32)
-            
-            # Get action probabilities from the network
             logits_t = net(state_t)
             probs_t = F.softmax(logits_t, dim=0)
-            
-            # Sample an action from the probability distribution
-            # .item() extracts the value from the tensor
             action = torch.multinomial(probs_t, num_samples=1).item()
 
             # --- Environment Step ---
             next_state, reward, done, truncated, _ = env.step(action)
 
-            # --- Store Experience ---
-            # We store the state, action, and reward for the current step
-            batch_states.append(state)
-            batch_actions.append(action)
+            # --- Store Experience for the current episode ---
+            episode_states.append(state)
+            episode_actions.append(action)
             episode_rewards.append(reward)
 
             step_idx += 1
@@ -99,17 +100,21 @@ if __name__ == "__main__":
 
             if done or truncated:
                 # --- Episode End ---
-                # Calculate discounted rewards for the completed episode
+                # Add the episode's data to the batch
+                batch_states.extend(episode_states)
+                batch_actions.extend(episode_actions)
+                # Calculate and add the baseline-adjusted q-values
                 batch_qvals.extend(calc_qvals(episode_rewards))
                 
                 # Update tracking variables
                 batch_episodes += 1
-                total_rewards.append(sum(episode_rewards))
+                episode_total_reward = sum(episode_rewards)
+                total_rewards.append(episode_total_reward)
                 mean_rewards = float(np.mean(total_rewards[-100:]))
                 
                 # --- Logging ---
-                print(f"{step_idx}: Episode {episode_idx}, Reward: {sum(episode_rewards):6.2f}, Mean-100: {mean_rewards:6.2f}")
-                writer.add_scalar("reward", sum(episode_rewards), step_idx)
+                print(f"{step_idx}: Episode {episode_idx}, Reward: {episode_total_reward:6.2f}, Mean-100: {mean_rewards:6.2f}")
+                writer.add_scalar("reward", episode_total_reward, step_idx)
                 writer.add_scalar("reward_100", mean_rewards, step_idx)
                 writer.add_scalar("episodes", episode_idx, step_idx)
 
@@ -143,9 +148,8 @@ if __name__ == "__main__":
         # Get the log probabilities for the actions that were actually taken
         log_prob_actions_t = log_prob_t[range(len(batch_states)), actions_t]
         
-        # Calculate the policy loss: - (log_prob * Q-value)
-        # We want to maximize (log_prob * Q-value), which is equivalent to
-        # minimizing its negative.
+        # Calculate the policy loss. Note that qvals_t are now the "advantages"
+        # because the baseline has been subtracted.
         loss_t = -(qvals_t * log_prob_actions_t).sum()
 
         loss_t.backward()
