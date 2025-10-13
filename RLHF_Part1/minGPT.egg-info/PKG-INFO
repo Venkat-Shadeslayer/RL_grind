@@ -1,0 +1,14 @@
+Metadata-Version: 2.4
+Name: minGPT
+Version: 0.0.1
+Summary: A PyTorch re-implementation of GPT
+Author: Andrej Karpathy, Thomas Tumiel
+License: MIT
+Requires-Dist: torch
+Requires-Dist: numpy<1.24
+Requires-Dist: transformers
+Requires-Dist: datasets
+Dynamic: author
+Dynamic: license
+Dynamic: requires-dist
+Dynamic: summary
